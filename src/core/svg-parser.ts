@@ -723,12 +723,34 @@ export class SvgParser {
     const sourceNodeId = this.findNodeAtPoint(firstPoint, nodes)
     const targetNodeId = this.findNodeAtPoint(lastPoint, nodes)
 
+    // Find associated label elements
+    const labelElement = this.findEdgeLabel(polyline, points)
+    const labelBackground = this.findEdgeLabelBackground(labelElement)
+
+    // Calculate label offset if label was found
+    let labelOffset: Point | undefined
+    if (labelElement) {
+      const midPoint = this.calculateEdgeMidpoint(points)
+      const labelBbox = this.getBBox(labelElement)
+      const labelCenter = {
+        x: labelBbox.x + labelBbox.width / 2,
+        y: labelBbox.y + labelBbox.height / 2
+      }
+      labelOffset = {
+        x: labelCenter.x - midPoint.x,
+        y: labelCenter.y - midPoint.y
+      }
+    }
+
     return {
       id: `edge-${this.edgeCounter++}`,
       element: polyline,
       points,
       sourceNodeId,
       targetNodeId,
+      labelElement,
+      labelBackground,
+      labelOffset,
     }
   }
 
@@ -746,32 +768,71 @@ export class SvgParser {
     const sourceNodeId = this.findNodeAtPoint(firstPoint, nodes)
     const targetNodeId = this.findNodeAtPoint(lastPoint, nodes)
 
+    // Find associated label elements
+    const labelElement = this.findEdgeLabel(line, points)
+    const labelBackground = this.findEdgeLabelBackground(labelElement)
+
+    // Calculate label offset if label was found
+    let labelOffset: Point | undefined
+    if (labelElement) {
+      const midPoint = this.calculateEdgeMidpoint(points)
+      const labelBbox = this.getBBox(labelElement)
+      const labelCenter = {
+        x: labelBbox.x + labelBbox.width / 2,
+        y: labelBbox.y + labelBbox.height / 2
+      }
+      labelOffset = {
+        x: labelCenter.x - midPoint.x,
+        y: labelCenter.y - midPoint.y
+      }
+    }
+
     return {
       id: `edge-${this.edgeCounter++}`,
       element: line,
       points,
       sourceNodeId,
       targetNodeId,
+      labelElement,
+      labelBackground,
+      labelOffset,
     }
   }
 
   /**
    * Find which node is at a given point
+   * Uses a dynamic threshold based on node size for more reliable edge-to-node connection detection
    */
   private findNodeAtPoint(point: Point, nodes: ParsedNode[]): string | undefined {
-    const threshold = 30 // pixels
+    // Sort nodes by distance to point (closest first)
+    const sortedNodes = [...nodes].sort((a, b) => {
+      const distA = Math.sqrt(
+        Math.pow(point.x - (a.x + a.width / 2), 2) +
+        Math.pow(point.y - (a.y + a.height / 2), 2)
+      )
+      const distB = Math.sqrt(
+        Math.pow(point.x - (b.x + b.width / 2), 2) +
+        Math.pow(point.y - (b.y + b.height / 2), 2)
+      )
+      return distA - distB
+    })
 
-    for (const node of nodes) {
+    for (const node of sortedNodes) {
       const nodeCenter = {
         x: node.x + node.width / 2,
         y: node.y + node.height / 2,
       }
 
+      // Dynamic threshold based on node size
+      const maxDim = Math.max(node.width, node.height)
+      const threshold = maxDim * 0.4 // 40% of max dimension
+
       const distance = Math.sqrt(
         Math.pow(point.x - nodeCenter.x, 2) + Math.pow(point.y - nodeCenter.y, 2)
       )
 
-      if (distance < Math.max(node.width, node.height) / 2 + threshold) {
+      // Check if point is within node bounds + threshold
+      if (distance < maxDim / 2 + threshold) {
         return node.id
       }
     }
@@ -887,6 +948,123 @@ export class SvgParser {
     } catch {
       return { x: 0, y: 0, width: 0, height: 0 }
     }
+  }
+
+  /**
+   * Find the label element associated with an edge.
+   * Labels are typically rendered after edges and positioned near the edge midpoint.
+   */
+  private findEdgeLabel(
+    edgeElement: SVGPolylineElement | SVGLineElement,
+    points: Point[]
+  ): SVGTextElement | undefined {
+    const svg = edgeElement.closest('svg') as SVGSVGElement
+    if (!svg) return undefined
+
+    // Calculate edge midpoint
+    const midPoint = this.calculateEdgeMidpoint(points)
+
+    // Find text elements near the midpoint
+    const texts = Array.from(svg.querySelectorAll('text'))
+    const threshold = 30 // px search radius
+
+    for (const text of texts) {
+      const bbox = this.getBBox(text)
+      const textCenter = {
+        x: bbox.x + bbox.width / 2,
+        y: bbox.y + bbox.height / 2
+      }
+
+      const distance = Math.sqrt(
+        Math.pow(textCenter.x - midPoint.x, 2) +
+        Math.pow(textCenter.y - midPoint.y, 2)
+      )
+
+      if (distance < threshold) {
+        // Verify it's an edge label (smaller font, muted color)
+        const fontSize = parseFloat(text.getAttribute('font-size') || '12')
+        if (fontSize < 14) { // Edge labels typically use smaller font
+          return text as SVGTextElement
+        }
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * Find the background rectangle for an edge label.
+   * Flowcharts and ER diagrams have background pills behind labels.
+   */
+  private findEdgeLabelBackground(
+    labelElement?: SVGTextElement
+  ): SVGRectElement | undefined {
+    if (!labelElement) return undefined
+
+    const svg = labelElement.closest('svg') as SVGSVGElement
+    if (!svg) return undefined
+
+    const labelBbox = this.getBBox(labelElement)
+
+    // Find a rect that overlaps significantly with the label
+    const rects = Array.from(svg.querySelectorAll('rect'))
+
+    for (const rect of rects) {
+      const rectBbox = this.getBBox(rect)
+
+      // Check for significant overlap (label should be inside/near bg rect)
+      const overlapX = Math.max(0,
+        Math.min(labelBbox.x + labelBbox.width, rectBbox.x + rectBbox.width) -
+        Math.max(labelBbox.x, rectBbox.x)
+      )
+      const overlapY = Math.max(0,
+        Math.min(labelBbox.y + labelBbox.height, rectBbox.y + rectBbox.height) -
+        Math.max(labelBbox.y, rectBbox.y)
+      )
+
+      if (overlapX > 5 && overlapY > 5) {
+        return rect as SVGRectElement
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * Calculate the arc-length midpoint of an edge.
+   * This finds the true midpoint along the path length, not just the average of points.
+   */
+  calculateEdgeMidpoint(points: Point[]): Point {
+    if (points.length === 0) return { x: 0, y: 0 }
+    if (points.length === 1) return points[0]!
+
+    // Calculate arc-length midpoint
+    let totalLength = 0
+    for (let i = 1; i < points.length; i++) {
+      const dx = points[i]!.x - points[i - 1]!.x
+      const dy = points[i]!.y - points[i - 1]!.y
+      totalLength += Math.sqrt(dx * dx + dy * dy)
+    }
+
+    const halfLength = totalLength / 2
+    let walked = 0
+
+    for (let i = 1; i < points.length; i++) {
+      const dx = points[i]!.x - points[i - 1]!.x
+      const dy = points[i]!.y - points[i - 1]!.y
+      const segLen = Math.sqrt(dx * dx + dy * dy)
+
+      if (walked + segLen >= halfLength) {
+        const t = segLen > 0 ? (halfLength - walked) / segLen : 0
+        return {
+          x: points[i - 1]!.x + dx * t,
+          y: points[i - 1]!.y + dy * t
+        }
+      }
+      walked += segLen
+    }
+
+    return points[points.length - 1]!
   }
 }
 

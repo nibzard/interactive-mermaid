@@ -83,6 +83,8 @@ export interface ParsedEdge {
   labelElement?: SVGTextElement
   /** Background rect for label (if present) */
   labelBackground?: SVGRectElement
+  /** Label's offset from edge midpoint */
+  labelOffset?: Point
 }
 
 /**

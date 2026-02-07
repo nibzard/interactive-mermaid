@@ -436,6 +436,90 @@ export class DragHandler {
         element.setAttribute('y2', String(edge.points[edge.points.length - 1]!.y))
       }
     }
+
+    // Update edge label if present
+    this.updateEdgeLabel(edge)
+  }
+
+  /**
+   * Update the position of an edge's label (and background if present)
+   */
+  private updateEdgeLabel(edge: ParsedEdge): void {
+    if (!edge.labelElement) return
+
+    // Calculate new label position (edge midpoint)
+    const newMidPoint = this.calculateEdgeMidpoint(edge.points)
+
+    // Get the label's offset from the midpoint (calculated during parsing or drag start)
+    const offset = edge.labelOffset || { x: 0, y: 0 }
+
+    // Update label text position
+    edge.labelElement.setAttribute('x', String(newMidPoint.x + offset.x))
+    edge.labelElement.setAttribute('y', String(newMidPoint.y + offset.y))
+
+    // Update background rectangle if present
+    if (edge.labelBackground) {
+      const labelBbox = this.getTextBBox(edge.labelElement)
+      const bgWidth = parseFloat(edge.labelBackground.getAttribute('width') || '0')
+      const bgHeight = parseFloat(edge.labelBackground.getAttribute('height') || '0')
+
+      edge.labelBackground.setAttribute('x', String(newMidPoint.x + offset.x - bgWidth / 2))
+      edge.labelBackground.setAttribute('y', String(newMidPoint.y + offset.y - bgHeight / 2))
+    }
+  }
+
+  /**
+   * Calculate the arc-length midpoint of an edge.
+   * This finds the true midpoint along the path length, not just the average of points.
+   */
+  private calculateEdgeMidpoint(points: Point[]): Point {
+    if (points.length === 0) return { x: 0, y: 0 }
+    if (points.length === 1) return points[0]!
+
+    // Calculate arc-length midpoint
+    let totalLength = 0
+    for (let i = 1; i < points.length; i++) {
+      const dx = points[i]!.x - points[i - 1]!.x
+      const dy = points[i]!.y - points[i - 1]!.y
+      totalLength += Math.sqrt(dx * dx + dy * dy)
+    }
+
+    const halfLength = totalLength / 2
+    let walked = 0
+
+    for (let i = 1; i < points.length; i++) {
+      const dx = points[i]!.x - points[i - 1]!.x
+      const dy = points[i]!.y - points[i - 1]!.y
+      const segLen = Math.sqrt(dx * dx + dy * dy)
+
+      if (walked + segLen >= halfLength) {
+        const t = segLen > 0 ? (halfLength - walked) / segLen : 0
+        return {
+          x: points[i - 1]!.x + dx * t,
+          y: points[i - 1]!.y + dy * t
+        }
+      }
+      walked += segLen
+    }
+
+    return points[points.length - 1]!
+  }
+
+  /**
+   * Get bounding box of a text element
+   */
+  private getTextBBox(textElement: SVGTextElement): { x: number; y: number; width: number; height: number } {
+    try {
+      const bbox = textElement.getBBox()
+      return {
+        x: bbox.x,
+        y: bbox.y,
+        width: bbox.width,
+        height: bbox.height,
+      }
+    } catch {
+      return { x: 0, y: 0, width: 0, height: 0 }
+    }
   }
 
   /**
