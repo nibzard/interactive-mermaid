@@ -7,7 +7,7 @@
 [![npm version](https://img.shields.io/npm/v/interactive-mermaid.svg)](https://www.npmjs.com/package/interactive-mermaid)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[**Live Demo →**](https://lukilabs.github.io/interactive-mermaid/)
+[**Live Demo →**](https://nibzard.github.io/interactive-mermaid/)
 
 </div>
 

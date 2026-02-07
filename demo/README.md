@@ -27,7 +27,7 @@ serve .
 
 The demo is automatically deployed to GitHub Pages on pushes to the `main` branch.
 
-Access it at: `https://lukilabs.github.io/beautiful-mermaid/demo/`
+Access it at: `https://nibzard.github.io/interactive-mermaid/`
 
 ## Features
 
