@@ -26,6 +26,7 @@ export class DragHandler {
   private dragOffset = { x: 0, y: 0 }
   private isDragging = false
   private source = ''
+  private originalEvent: Event | null = null
 
   // Event listener bindings for cleanup
   private boundMouseDown: ((e: Event) => void) | null = null
@@ -167,7 +168,7 @@ export class DragHandler {
     if (!node) return
 
     event.preventDefault()
-    this.startDrag(node, mouseEvent.clientX, mouseEvent.clientY)
+    this.startDrag(node, mouseEvent.clientX, mouseEvent.clientY, event)
   }
 
   /**
@@ -194,22 +195,31 @@ export class DragHandler {
 
     const touch = touchEvent.touches[0]
     if (touch) {
-      this.startDrag(node, touch.clientX, touch.clientY)
+      this.startDrag(node, touch.clientX, touch.clientY, event)
     }
   }
 
   /**
    * Start dragging a node
    */
-  private startDrag(node: ParsedNode, clientX: number, clientY: number): void {
+  private startDrag(node: ParsedNode, clientX: number, clientY: number, originalEvent: Event): void {
     this.activeNode = node
     this.isDragging = true
 
-    // Calculate offset from node position
+    // Convert screen coordinates to SVG coordinates
+    const pt = this.svg.createSVGPoint()
+    pt.x = clientX
+    pt.y = clientY
+    const svgPt = pt.matrixTransform(this.svg.getScreenCTM()?.inverse() || new DOMMatrix())
+
+    // Calculate offset from node position (both in SVG coordinate space now)
     this.dragOffset = {
-      x: clientX - node.x,
-      y: clientY - node.y,
+      x: svgPt.x - node.x,
+      y: svgPt.y - node.y,
     }
+
+    // Store the original event for potential use
+    this.originalEvent = originalEvent
 
     // Add dragging class
     const draggingClass = this.options.draggingClass || 'mermaid-dragging'
@@ -262,8 +272,15 @@ export class DragHandler {
   private updateDrag(clientX: number, clientY: number): void {
     if (!this.activeNode) return
 
-    let newX = clientX - this.dragOffset.x
-    let newY = clientY - this.dragOffset.y
+    // Convert screen coordinates to SVG coordinates
+    const pt = this.svg.createSVGPoint()
+    pt.x = clientX
+    pt.y = clientY
+    const svgPt = pt.matrixTransform(this.svg.getScreenCTM()?.inverse() || new DOMMatrix())
+
+    // Calculate new position (both are now in SVG coordinate space)
+    let newX = svgPt.x - this.dragOffset.x
+    let newY = svgPt.y - this.dragOffset.y
 
     // Apply grid snapping if enabled
     if (this.options.gridSize && this.options.gridSize > 0) {
@@ -271,14 +288,8 @@ export class DragHandler {
       newY = Math.round(newY / this.options.gridSize) * this.options.gridSize
     }
 
-    // Get SVG to screen coordinate transformation
-    const pt = this.svg.createSVGPoint()
-    pt.x = newX
-    pt.y = newY
-    const svgPt = pt.matrixTransform(this.svg.getScreenCTM()?.inverse() || new DOMMatrix())
-
     // Update node position
-    this.tracker.updateNodePosition(this.activeNode.id, svgPt.x, svgPt.y)
+    this.tracker.updateNodePosition(this.activeNode.id, newX, newY)
 
     // Apply transform to node elements
     this.tracker.applyPositionUpdates()
