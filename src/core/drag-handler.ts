@@ -70,6 +70,9 @@ export class DragHandler {
         const cursor = this.options.hoverCursor || 'grab'
         element.style.cursor = cursor
 
+        // Disable default touch actions to prevent scrolling/swiping while dragging
+        element.style.touchAction = 'none'
+
         // Store reference to node ID on the element
         element.setAttribute('data-mermaid-node-id', node.id)
       }
@@ -190,6 +193,10 @@ export class DragHandler {
     const node = this.tracker.getNode(nodeId)
     if (!node) return
 
+    // Stop event from propagating
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+
     // Prevent default to avoid page scrolling while dragging
     touchEvent.preventDefault()
 
@@ -207,10 +214,7 @@ export class DragHandler {
     this.isDragging = true
 
     // Convert screen coordinates to SVG coordinates
-    const pt = this.svg.createSVGPoint()
-    pt.x = clientX
-    pt.y = clientY
-    const svgPt = pt.matrixTransform(this.svg.getScreenCTM()?.inverse() || new DOMMatrix())
+    const svgPt = this.clientToSvgCoords(clientX, clientY)
 
     // Calculate offset from node position (both in SVG coordinate space now)
     this.dragOffset = {
@@ -240,6 +244,33 @@ export class DragHandler {
   }
 
   /**
+   * Convert client/screen coordinates to SVG coordinates
+   * Uses getScreenCTM() with fallback to getBoundingClientRect() calculation
+   */
+  private clientToSvgCoords(clientX: number, clientY: number): { x: number; y: number } {
+    // Try using getScreenCTM() first (works in most browsers)
+    try {
+      const ctm = this.svg.getScreenCTM()
+      if (ctm) {
+        const pt = this.svg.createSVGPoint()
+        pt.x = clientX
+        pt.y = clientY
+        const svgPt = pt.matrixTransform(ctm.inverse())
+        return { x: svgPt.x, y: svgPt.y }
+      }
+    } catch (e) {
+      // Fall through to manual calculation
+    }
+
+    // Manual fallback using getBoundingClientRect()
+    const rect = this.svg.getBoundingClientRect()
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    }
+  }
+
+  /**
    * Handle mouse move event
    */
   private handleMouseMove(event: Event): void {
@@ -257,6 +288,9 @@ export class DragHandler {
 
     const touchEvent = event as TouchEvent
 
+    // Stop event from propagating
+    event.stopPropagation()
+
     // Prevent default to avoid page scrolling while dragging
     touchEvent.preventDefault()
 
@@ -273,10 +307,7 @@ export class DragHandler {
     if (!this.activeNode) return
 
     // Convert screen coordinates to SVG coordinates
-    const pt = this.svg.createSVGPoint()
-    pt.x = clientX
-    pt.y = clientY
-    const svgPt = pt.matrixTransform(this.svg.getScreenCTM()?.inverse() || new DOMMatrix())
+    const svgPt = this.clientToSvgCoords(clientX, clientY)
 
     // Calculate new position (both are now in SVG coordinate space)
     let newX = svgPt.x - this.dragOffset.x
